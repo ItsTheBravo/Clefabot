@@ -1,0 +1,4 @@
+# Phase 1 runtime deps. Kept lean for M1 (server + play + data layer);
+# torch / stable-baselines3 arrive with the imitation baseline (M4) and PPO
+# loop (M5).
+poke-env>=0.15.0

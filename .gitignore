@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# Local Showdown server (fetched via scripts/setup_server.sh, not vendored)
+/server/
+
+# Node
+node_modules/
+
+# Generated data / artifacts
+/data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Secrets / local config
+config/*.local
+.env
