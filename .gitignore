@@ -19,3 +19,8 @@ node_modules/
 # Secrets / local config
 config/*.local
 .env
+
+# Model checkpoints / datasets (regenerable artifacts)
+/checkpoints/
+*.pt
+*.npz

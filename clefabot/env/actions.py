@@ -76,6 +76,51 @@ def legal_action_mask(battle: DoubleBattle) -> np.ndarray:
     return np.stack([_slot_mask(battle, s) for s in range(N_ACTIVE_SLOTS)])
 
 
+# --- target <-> index mapping (doubles) --------------------------------
+# poke-env doubles targets: +1/+2 = opponent slots, -1/-2 = own side,
+# 0 = no explicit target (spread/self/status). We keep a single consistent
+# mapping so labels collected from a teacher and orders reconstructed for
+# execution agree. Exact target legality is validated against the move at
+# execution time (M5); this mapping just pins the encoding.
+def move_target_to_index(move_target: int) -> int:
+    if move_target == 1:
+        return 0  # opp_0
+    if move_target == 2:
+        return 1  # opp_1
+    if move_target < 0:
+        return 2  # ally
+    return 3      # self / spread / no explicit target
+
+
+def index_to_move_target(target_index: int) -> int:
+    return {0: 1, 1: 2, 2: -1, 3: 0}.get(target_index, 0)
+
+
+def encode_order_slot(order, active, switches) -> int:
+    """Map one poke-env SingleBattleOrder to a per-slot action index.
+
+    ``active`` is the Pokemon in this slot; ``switches`` is the slot's list of
+    available switch targets. Returns PASS_ACTION for pass/default orders.
+    """
+    from poke_env.battle import Move, Pokemon
+
+    inner = getattr(order, "order", None)
+    if isinstance(inner, Move):
+        move_list = list(active.moves.values()) if active and active.moves else []
+        m_idx = next((i for i, mv in enumerate(move_list) if mv.id == inner.id), None)
+        if m_idx is None or m_idx >= N_MOVES:
+            return PASS_ACTION
+        t_idx = move_target_to_index(getattr(order, "move_target", 0))
+        return m_idx * N_TARGETS + t_idx
+    if isinstance(inner, Pokemon):
+        s_idx = next((i for i, mon in enumerate(switches)
+                      if mon.species == inner.species), None)
+        if s_idx is None or s_idx >= N_SWITCH:
+            return PASS_ACTION
+        return MOVE_ACTIONS + s_idx
+    return PASS_ACTION
+
+
 def decode_action(action_index: int) -> dict:
     """Decode a single per-slot action index into a structured description.
 

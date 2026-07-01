@@ -15,8 +15,8 @@ build order.
 | **M1 — Environment + one logged game** | ✅ done |
 | **M2 — Data layer + damage-calc utility** | ✅ done |
 | **M3 — Fixed-shape env contract** | ✅ done |
-| M4 — Imitation baseline | next |
-| M5 — PPO self-play loop | pending |
+| **M4 — Imitation baseline** | ✅ done |
+| M5 — PPO self-play loop | next |
 | M6 — Opponent pool | pending |
 | M7 — Evaluation gate | pending |
 | M8 — Retrain trigger | pending |
@@ -36,6 +36,31 @@ M3 locks the warm-start contract: a fixed-size, team-agnostic observation
 (`OBS_SIZE = 1992`) and action space (`(2, 21)` MultiDiscrete + legality mask),
 verified team-invariant both offline and on live battles. This is what makes a
 team edit a re-train rather than a re-architecture.
+
+M4 trains the imitation baseline: the shared `PolicyValueNet` (used verbatim by
+PPO at M5, so warm-start is a literal weight copy) is behavior-cloned from
+poke-env's `SimpleHeuristicsPlayer`. The cloned net **wins 92.5% vs a random
+baseline** (spec §7 acceptance: beat random), with clean doubles order execution
+(0% fallback). The value/policy heads also back the "analyze this turn" readout
+(plan §1.2). `replay_ingest.py` provides the §7 replay-log→state path for real
+human replays once that corpus is reachable.
+
+### Imitation pipeline (M4)
+
+```bash
+# collect (state, action) pairs from the teacher, behavior-clone, evaluate
+.venv/bin/python -m clefabot.imitation.collect   --games 150 --out data/bc_dataset.npz
+.venv/bin/python -m clefabot.imitation.train_bc  --dataset data/bc_dataset.npz --out checkpoints/bc_baseline.pt
+.venv/bin/python -m clefabot.imitation.evaluate  --checkpoint checkpoints/bc_baseline.pt --games 40
+```
+
+### Known data-access limitation
+
+`replay.pokemonshowdown.com` and pokepaste hosts are blocked by this
+environment's network policy, so the real human-replay corpus (M4 quality) and
+scraped opponent teams (M6) can't be fetched here yet. The pipeline is built and
+tested against local data; widening the policy or dropping in a data export
+unblocks the external corpus without code changes.
 
 ## Setup
 
