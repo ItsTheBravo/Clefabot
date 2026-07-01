@@ -13,9 +13,9 @@ build order.
 | Milestone | State |
 |---|---|
 | **M1 — Environment + one logged game** | ✅ done |
-| M2 — Data layer + damage-calc utility | schema in place; damage calc pending |
-| M3 — Fixed-shape env contract | next |
-| M4 — Imitation baseline | pending |
+| **M2 — Data layer + damage-calc utility** | ✅ done |
+| **M3 — Fixed-shape env contract** | ✅ done |
+| M4 — Imitation baseline | next |
 | M5 — PPO self-play loop | pending |
 | M6 — Opponent pool | pending |
 | M7 — Evaluation gate | pending |
@@ -27,6 +27,15 @@ M1 proves the full spine: a real doubles game plays on a local Reg M-B server
 and is logged end to end into SQLite (games + per-turn snapshots + team version),
 exportable to CSV. Mega Evolution resolves correctly in-battle (the turn log
 shows `raichu` → `raichumegay`).
+
+M2 wires the shared damage utility (`clefabot/data_layer/damage.py`) over
+poke-env's built-in calculator — one source of damage math for reward shaping
+and analytics.
+
+M3 locks the warm-start contract: a fixed-size, team-agnostic observation
+(`OBS_SIZE = 1992`) and action space (`(2, 21)` MultiDiscrete + legality mask),
+verified team-invariant both offline and on live battles. This is what makes a
+team edit a re-train rather than a re-architecture.
 
 ## Setup
 
