@@ -39,9 +39,9 @@ team edit a re-train rather than a re-architecture.
 
 M4 trains the imitation baseline: the shared `PolicyValueNet` (used verbatim by
 PPO at M5, so warm-start is a literal weight copy) is behavior-cloned from
-poke-env's `SimpleHeuristicsPlayer`. The cloned net **wins 92.5% vs a random
-baseline** (spec §7 acceptance: beat random), with clean doubles order execution
-(0% fallback). The value/policy heads also back the "analyze this turn" readout
+poke-env's `SimpleHeuristicsPlayer`. The cloned net **wins 100% vs a random baseline**
+(spec §7 acceptance: beat random), with clean doubles order execution (~0%
+fallback incl. force-switch turns). The value/policy heads also back the "analyze this turn" readout
 (plan §1.2). `replay_ingest.py` provides the §7 replay-log→state path for real
 human replays once that corpus is reachable.
 

@@ -62,3 +62,47 @@ def test_two_different_teams_same_obs_length():
     enc_a = np.concatenate([features.encode_pokemon(_mon(s)) for s in team_a])
     enc_b = np.concatenate([features.encode_pokemon(_mon(s)) for s in team_b])
     assert enc_a.shape == enc_b.shape == (6 * features.MON_FEATS,)
+
+
+class _FakeBattle:
+    """Minimal DoubleBattle stand-in for mask logic tests."""
+
+    def __init__(self, force_switch, actives, moves, switches):
+        self.force_switch = force_switch
+        self.active_pokemon = actives
+        self.available_moves = moves
+        self.available_switches = switches
+
+
+def test_force_switch_mask_inverts_slots():
+    """Regression: the forced slot must switch; the other slot must pass.
+
+    (Bug found in audit: a fainted active previously produced a pass-only mask
+    on exactly the slot that was required to switch.)
+    """
+    bench = [_mon("clefable"), _mon("kingambit")]
+    battle = _FakeBattle(
+        force_switch=[True, False],
+        actives=[None, _mon("mamoswine")],
+        moves=[[], []],
+        switches=[bench, bench],
+    )
+    mask = actions.legal_action_mask(battle)
+    # Slot 0 (forced): exactly the two switch actions, nothing else.
+    assert mask[0, actions.MOVE_ACTIONS:actions.MOVE_ACTIONS + 2].all()
+    assert not mask[0, :actions.MOVE_ACTIONS].any()
+    assert not mask[0, actions.PASS_ACTION]
+    # Slot 1 (not forced): pass only.
+    assert mask[1, actions.PASS_ACTION]
+    assert mask[1].sum() == 1
+
+
+def test_force_switch_no_bench_falls_back_to_pass():
+    battle = _FakeBattle(
+        force_switch=[True, False],
+        actives=[None, _mon("mamoswine")],
+        moves=[[], []],
+        switches=[[], []],
+    )
+    mask = actions.legal_action_mask(battle)
+    assert mask[0, actions.PASS_ACTION] and mask[0].sum() == 1

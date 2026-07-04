@@ -48,14 +48,22 @@ class BCPlayer(Player):
         """Return a list of legal SingleBattleOrders for the policy's choice."""
         dec = decode_action(int(action_index))
         active = battle.active_pokemon[slot] if slot < len(battle.active_pokemon) else None
-        if active is None:
-            return []
+        # No early return on active is None: on force-switch turns the fainted
+        # slot has no active mon, yet it is exactly the slot that must switch.
         if dec["kind"] == "switch":
             switches = battle.available_switches[slot] if slot < len(battle.available_switches) else []
             if dec["bench_slot"] < len(switches):
-                return [SingleBattleOrder(switches[dec["bench_slot"]])]
+                # Chosen switch first, remaining as alternatives: join_orders
+                # rejects both slots switching to the same mon (double-KO
+                # turns), and the alternatives let it resolve that collision
+                # instead of falling back to a random order.
+                chosen = switches[dec["bench_slot"]]
+                rest = [SingleBattleOrder(s) for s in switches if s is not chosen]
+                return [SingleBattleOrder(chosen), *rest]
             return []
         if dec["kind"] == "move":
+            if active is None:
+                return []
             moves = battle.available_moves[slot] if slot < len(battle.available_moves) else []
             active_moves = list(active.moves.values()) if active.moves else []
             if dec["move_slot"] >= len(active_moves):

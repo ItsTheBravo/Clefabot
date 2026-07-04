@@ -43,6 +43,23 @@ def _slot_mask(battle: DoubleBattle, slot: int) -> np.ndarray:
     """Boolean legality mask (length PER_SLOT_ACTIONS) for one active slot."""
     mask = np.zeros(PER_SLOT_ACTIONS, dtype=bool)
 
+    # Force-switch turns invert the usual logic: the slot whose mon fainted is
+    # exactly the one that must act (switch), and the other slot must pass.
+    # battle.force_switch is the ground truth; the fainted-active check below
+    # must not shadow it.
+    force = battle.force_switch if battle.force_switch else [False, False]
+    if any(force):
+        if force[slot]:
+            switches = battle.available_switches[slot] \
+                if slot < len(battle.available_switches) else []
+            for s_idx in range(min(len(switches), N_SWITCH)):
+                mask[MOVE_ACTIONS + s_idx] = True
+            if not mask.any():
+                mask[PASS_ACTION] = True
+        else:
+            mask[PASS_ACTION] = True
+        return mask
+
     active = battle.active_pokemon[slot] if slot < len(battle.active_pokemon) else None
     if active is None or active.fainted:
         mask[PASS_ACTION] = True
