@@ -1,18 +1,27 @@
 """Fixed-shape, team-agnostic action space for doubles (plan §1.3 / M3).
 
-Like the observation encoding, the action space is sized by constants, not by the
-current team, so the policy head keeps the same width across team edits.
+This is a thin adapter over poke-env's native doubles action encoding
+(``DoublesEnv``), adopted in place of an earlier hand-rolled 21-action scheme
+because the native one additionally covers Mega Evolution / Tera orders (the
+hand-rolled scheme deferred gimmicks — untenable for a team built around Mega
+Raichu Y) and ships with maintained, battle-tested ``action_to_order`` /
+``order_to_action`` / ``get_action_mask`` implementations (verified live:
+100% teacher-label-in-mask over sampled games, zero conversion errors).
 
-Encoding (per active slot):
-    0 .. N_MOVES*N_TARGETS-1   : use move m at target t
-    then N_SWITCH              : switch to bench slot s
-    then 1                     : pass / default (e.g. slot is fainted)
+Per-slot encoding (poke-env's, documented in DoublesEnv.action_to_order;
+each move block is 5 consecutive targets in order -2, -1, 0, 1, 2):
 
-A doubles action is a pair (one entry per active slot) -> MultiDiscrete of two
-identical per-slot spaces. Gimmick use (Mega/Tera) is exposed as a separate
-binary flag rather than doubling the discrete space; wiring the flag through to
-order execution lands with the Gym env in M5. The legality mask below is what
-PPO consumes to avoid illegal actions.
+    0                : pass
+    1..6             : switch to team slot 1..6
+    7..26            : move 1..4 x target
+    27..46           : move 1..4 x target, mega evolve
+    47..66           : move 1..4 x target, z-move   (dead in gen 9, masked out)
+    67..86           : move 1..4 x target, dynamax  (dead in gen 9, masked out)
+    87..106          : move 1..4 x target, terastallize
+    (-2 default / -1 forfeit exist in the scheme but are never emitted here)
+
+The action space stays a pure function of constants — team-agnostic, which is
+what keeps a team edit a re-train rather than a re-architecture.
 """
 
 from __future__ import annotations
@@ -20,18 +29,24 @@ from __future__ import annotations
 import numpy as np
 
 from poke_env.battle import DoubleBattle
+from poke_env.environment import DoublesEnv
 
-N_MOVES = 4          # move slots
-N_TARGETS = 4        # generic targets: opp_0, opp_1, ally, self
-N_SWITCH = 4         # bench switch slots (padded; VGC uses <=2)
+GEN = 9
+N_ACTIVE_SLOTS = 2
+PER_SLOT_ACTIONS = DoublesEnv.get_action_space_size(GEN)  # 107 for gen 9
 
-MOVE_ACTIONS = N_MOVES * N_TARGETS         # 16
-PASS_ACTION = MOVE_ACTIONS + N_SWITCH      # index of the pass action
-PER_SLOT_ACTIONS = MOVE_ACTIONS + N_SWITCH + 1   # 21
-N_ACTIVE_SLOTS = 2                          # doubles
+# Layout constants for decode/analytics.
+PASS_ACTION = 0
+SWITCH_BASE = 1          # 1..6
+MOVE_BASE = 7            # 7..: 4 moves x 5 targets per gimmick block
+TARGETS = (-2, -1, 0, 1, 2)
+N_MOVES = 4
+N_TARGETS = len(TARGETS)
+GIMMICKS = ("none", "mega", "zmove", "dynamax", "tera")
 
-# Target index -> semantic label (documentation / decode aid).
-TARGET_LABELS = ("opp_0", "opp_1", "ally", "self")
+# Re-exported order conversions (single source of truth: poke-env).
+action_to_order = DoublesEnv.action_to_order
+order_to_action = DoublesEnv.order_to_action
 
 
 def action_space_shape() -> tuple[int, int]:
@@ -39,116 +54,27 @@ def action_space_shape() -> tuple[int, int]:
     return (N_ACTIVE_SLOTS, PER_SLOT_ACTIONS)
 
 
-def _slot_mask(battle: DoubleBattle, slot: int) -> np.ndarray:
-    """Boolean legality mask (length PER_SLOT_ACTIONS) for one active slot."""
-    mask = np.zeros(PER_SLOT_ACTIONS, dtype=bool)
-
-    # Force-switch turns invert the usual logic: the slot whose mon fainted is
-    # exactly the one that must act (switch), and the other slot must pass.
-    # battle.force_switch is the ground truth; the fainted-active check below
-    # must not shadow it.
-    force = battle.force_switch if battle.force_switch else [False, False]
-    if any(force):
-        if force[slot]:
-            switches = battle.available_switches[slot] \
-                if slot < len(battle.available_switches) else []
-            for s_idx in range(min(len(switches), N_SWITCH)):
-                mask[MOVE_ACTIONS + s_idx] = True
-            if not mask.any():
-                mask[PASS_ACTION] = True
-        else:
-            mask[PASS_ACTION] = True
-        return mask
-
-    active = battle.active_pokemon[slot] if slot < len(battle.active_pokemon) else None
-    if active is None or active.fainted:
-        mask[PASS_ACTION] = True
-        return mask
-
-    # Legal moves for this slot.
-    moves = battle.available_moves[slot] if slot < len(battle.available_moves) else []
-    active_moves = list(active.moves.values()) if active.moves else []
-    for move in moves:
-        try:
-            m_idx = active_moves.index(move)
-        except ValueError:
-            m_idx = next((i for i, mv in enumerate(active_moves) if mv.id == move.id), None)
-        if m_idx is None or m_idx >= N_MOVES:
-            continue
-        for t in range(N_TARGETS):
-            mask[m_idx * N_TARGETS + t] = True
-
-    # Legal switches for this slot.
-    switches = battle.available_switches[slot] if slot < len(battle.available_switches) else []
-    for s_idx in range(min(len(switches), N_SWITCH)):
-        mask[MOVE_ACTIONS + s_idx] = True
-
-    if not mask.any():
-        mask[PASS_ACTION] = True
-    return mask
-
-
 def legal_action_mask(battle: DoubleBattle) -> np.ndarray:
-    """Return a (N_ACTIVE_SLOTS, PER_SLOT_ACTIONS) boolean legality mask."""
-    return np.stack([_slot_mask(battle, s) for s in range(N_ACTIVE_SLOTS)])
-
-
-# --- target <-> index mapping (doubles) --------------------------------
-# poke-env doubles targets: +1/+2 = opponent slots, -1/-2 = own side,
-# 0 = no explicit target (spread/self/status). We keep a single consistent
-# mapping so labels collected from a teacher and orders reconstructed for
-# execution agree. Exact target legality is validated against the move at
-# execution time (M5); this mapping just pins the encoding.
-def move_target_to_index(move_target: int) -> int:
-    if move_target == 1:
-        return 0  # opp_0
-    if move_target == 2:
-        return 1  # opp_1
-    if move_target < 0:
-        return 2  # ally
-    return 3      # self / spread / no explicit target
-
-
-def index_to_move_target(target_index: int) -> int:
-    return {0: 1, 1: 2, 2: -1, 3: 0}.get(target_index, 0)
-
-
-def encode_order_slot(order, active, switches) -> int:
-    """Map one poke-env SingleBattleOrder to a per-slot action index.
-
-    ``active`` is the Pokemon in this slot; ``switches`` is the slot's list of
-    available switch targets. Returns PASS_ACTION for pass/default orders.
-    """
-    from poke_env.battle import Move, Pokemon
-
-    inner = getattr(order, "order", None)
-    if isinstance(inner, Move):
-        move_list = list(active.moves.values()) if active and active.moves else []
-        m_idx = next((i for i, mv in enumerate(move_list) if mv.id == inner.id), None)
-        if m_idx is None or m_idx >= N_MOVES:
-            return PASS_ACTION
-        t_idx = move_target_to_index(getattr(order, "move_target", 0))
-        return m_idx * N_TARGETS + t_idx
-    if isinstance(inner, Pokemon):
-        s_idx = next((i for i, mon in enumerate(switches)
-                      if mon.species == inner.species), None)
-        if s_idx is None or s_idx >= N_SWITCH:
-            return PASS_ACTION
-        return MOVE_ACTIONS + s_idx
-    return PASS_ACTION
+    """(N_ACTIVE_SLOTS, PER_SLOT_ACTIONS) boolean legality mask."""
+    flat = np.array(DoublesEnv.get_action_mask(battle), dtype=bool)
+    return flat.reshape(N_ACTIVE_SLOTS, PER_SLOT_ACTIONS)
 
 
 def decode_action(action_index: int) -> dict:
-    """Decode a single per-slot action index into a structured description.
-
-    Order execution against poke-env's BattleOrder happens in the Gym env (M5);
-    this decoder is the shared source of truth for what each index means and is
-    used by the tests to pin the contract.
-    """
-    if action_index >= PASS_ACTION:
+    """Decode one per-slot action index into a structured description."""
+    a = int(action_index)
+    if a == PASS_ACTION:
         return {"kind": "pass"}
-    if action_index >= MOVE_ACTIONS:
-        return {"kind": "switch", "bench_slot": action_index - MOVE_ACTIONS}
-    move_slot, target = divmod(action_index, N_TARGETS)
-    return {"kind": "move", "move_slot": move_slot,
-            "target": target, "target_label": TARGET_LABELS[target]}
+    if a < 0:
+        return {"kind": "default" if a == -2 else "forfeit"}
+    if SWITCH_BASE <= a < MOVE_BASE:
+        return {"kind": "switch", "team_slot": a - SWITCH_BASE}
+    rel = a - MOVE_BASE
+    block, within = divmod(rel, N_MOVES * N_TARGETS)
+    move_slot, target_idx = divmod(within, N_TARGETS)
+    return {
+        "kind": "move",
+        "move_slot": move_slot,
+        "target": TARGETS[target_idx],
+        "gimmick": GIMMICKS[block],
+    }

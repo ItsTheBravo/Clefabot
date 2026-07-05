@@ -33,15 +33,19 @@ poke-env's built-in calculator — one source of damage math for reward shaping
 and analytics.
 
 M3 locks the warm-start contract: a fixed-size, team-agnostic observation
-(`OBS_SIZE = 1992`) and action space (`(2, 21)` MultiDiscrete + legality mask),
-verified team-invariant both offline and on live battles. This is what makes a
-team edit a re-train rather than a re-architecture.
+(`OBS_SIZE = 1992`) and action space, verified team-invariant both offline and
+on live battles. This is what makes a team edit a re-train rather than a
+re-architecture. The action space is poke-env's native gen-9 doubles encoding
+(`MultiDiscrete([107, 107])` + legality mask) — adopted over an initial
+hand-rolled 21-action scheme because it covers Mega Evolution/Tera orders and
+shares one source of truth (`action_to_order` / `order_to_action` /
+`get_action_mask`) between labels, mask, and execution.
 
 M4 trains the imitation baseline: the shared `PolicyValueNet` (used verbatim by
 PPO at M5, so warm-start is a literal weight copy) is behavior-cloned from
 poke-env's `SimpleHeuristicsPlayer`. The cloned net **wins 100% vs a random baseline**
-(spec §7 acceptance: beat random), with clean doubles order execution (~0%
-fallback incl. force-switch turns). The value/policy heads also back the "analyze this turn" readout
+(spec §7 acceptance: beat random), with clean doubles order execution (~0% fallback
+incl. force-switch turns) and Mega Evolution firing in play. The value/policy heads also back the "analyze this turn" readout
 (plan §1.2). `replay_ingest.py` provides the §7 replay-log→state path for real
 human replays once that corpus is reachable.
 

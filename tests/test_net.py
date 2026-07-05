@@ -3,14 +3,7 @@
 import numpy as np
 import torch
 
-from clefabot.env.actions import (
-    N_ACTIVE_SLOTS,
-    PER_SLOT_ACTIONS,
-    decode_action,
-    encode_order_slot,
-    index_to_move_target,
-    move_target_to_index,
-)
+from clefabot.env.actions import N_ACTIVE_SLOTS, PER_SLOT_ACTIONS
 from clefabot.env.features import OBS_SIZE
 from clefabot.imitation.net import PolicyValueNet
 
@@ -41,14 +34,6 @@ def test_action_probs_sum_to_one_over_legal():
     assert torch.allclose(probs.sum(-1), torch.ones(N_ACTIVE_SLOTS), atol=1e-5)
     # Illegal actions get zero probability.
     assert probs[0, 3:].sum().item() < 1e-6
-
-
-def test_target_mapping_roundtrip():
-    for idx in range(4):
-        mt = index_to_move_target(idx)
-        # opp targets roundtrip exactly; own-side collapses (documented approx).
-        if idx in (0, 1):
-            assert move_target_to_index(mt) == idx
 
 
 def test_bc_training_reduces_loss():

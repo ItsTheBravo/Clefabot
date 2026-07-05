@@ -29,6 +29,12 @@ def train(dataset_path: str, out_path: str, epochs: int = 20,
     actions = torch.from_numpy(data["actions"]).long()      # [N, n_slots]
     masks = torch.from_numpy(data["masks"]).bool()          # [N, n_slots, per_slot]
 
+    # Defensive: drop any rows with negative (default/forfeit sentinel) labels.
+    keep = (actions >= 0).all(dim=1)
+    if (~keep).any():
+        print(f"dropping {(~keep).sum().item()} rows with sentinel labels")
+        obs, actions, masks = obs[keep], actions[keep], masks[keep]
+
     n = obs.shape[0]
     if n == 0:
         raise ValueError("empty dataset")

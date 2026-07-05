@@ -38,19 +38,25 @@ def test_obs_size_is_pure_constant():
 
 
 def test_action_space_shape_fixed():
-    assert actions.action_space_shape() == (
-        actions.N_ACTIVE_SLOTS, actions.PER_SLOT_ACTIONS)
-    assert actions.PER_SLOT_ACTIONS == actions.N_MOVES * actions.N_TARGETS + \
-        actions.N_SWITCH + 1
+    # poke-env native gen-9 doubles encoding: 107 actions per active slot.
+    assert actions.action_space_shape() == (2, 107)
+    assert actions.PER_SLOT_ACTIONS == 107
 
 
-def test_action_decode_roundtrip():
-    assert actions.decode_action(0) == {
-        "kind": "move", "move_slot": 0, "target": 0, "target_label": "opp_0"}
-    assert actions.decode_action(actions.N_TARGETS)["move_slot"] == 1
-    sw = actions.decode_action(actions.MOVE_ACTIONS)
-    assert sw == {"kind": "switch", "bench_slot": 0}
-    assert actions.decode_action(actions.PASS_ACTION) == {"kind": "pass"}
+def test_action_decode_layout():
+    assert actions.decode_action(0) == {"kind": "pass"}
+    assert actions.decode_action(1) == {"kind": "switch", "team_slot": 0}
+    assert actions.decode_action(6) == {"kind": "switch", "team_slot": 5}
+    d = actions.decode_action(7)
+    assert d == {"kind": "move", "move_slot": 0, "target": -2, "gimmick": "none"}
+    # 27 opens the mega block: move 1, first target, mega evolve.
+    d = actions.decode_action(27)
+    assert d["kind"] == "move" and d["move_slot"] == 0 and d["gimmick"] == "mega"
+    # 87 opens the tera block.
+    assert actions.decode_action(87)["gimmick"] == "tera"
+    # Last index decodes cleanly.
+    d = actions.decode_action(actions.PER_SLOT_ACTIONS - 1)
+    assert d == {"kind": "move", "move_slot": 3, "target": 2, "gimmick": "tera"}
 
 
 def test_two_different_teams_same_obs_length():
@@ -62,47 +68,3 @@ def test_two_different_teams_same_obs_length():
     enc_a = np.concatenate([features.encode_pokemon(_mon(s)) for s in team_a])
     enc_b = np.concatenate([features.encode_pokemon(_mon(s)) for s in team_b])
     assert enc_a.shape == enc_b.shape == (6 * features.MON_FEATS,)
-
-
-class _FakeBattle:
-    """Minimal DoubleBattle stand-in for mask logic tests."""
-
-    def __init__(self, force_switch, actives, moves, switches):
-        self.force_switch = force_switch
-        self.active_pokemon = actives
-        self.available_moves = moves
-        self.available_switches = switches
-
-
-def test_force_switch_mask_inverts_slots():
-    """Regression: the forced slot must switch; the other slot must pass.
-
-    (Bug found in audit: a fainted active previously produced a pass-only mask
-    on exactly the slot that was required to switch.)
-    """
-    bench = [_mon("clefable"), _mon("kingambit")]
-    battle = _FakeBattle(
-        force_switch=[True, False],
-        actives=[None, _mon("mamoswine")],
-        moves=[[], []],
-        switches=[bench, bench],
-    )
-    mask = actions.legal_action_mask(battle)
-    # Slot 0 (forced): exactly the two switch actions, nothing else.
-    assert mask[0, actions.MOVE_ACTIONS:actions.MOVE_ACTIONS + 2].all()
-    assert not mask[0, :actions.MOVE_ACTIONS].any()
-    assert not mask[0, actions.PASS_ACTION]
-    # Slot 1 (not forced): pass only.
-    assert mask[1, actions.PASS_ACTION]
-    assert mask[1].sum() == 1
-
-
-def test_force_switch_no_bench_falls_back_to_pass():
-    battle = _FakeBattle(
-        force_switch=[True, False],
-        actives=[None, _mon("mamoswine")],
-        moves=[[], []],
-        switches=[[], []],
-    )
-    mask = actions.legal_action_mask(battle)
-    assert mask[0, actions.PASS_ACTION] and mask[0].sum() == 1
