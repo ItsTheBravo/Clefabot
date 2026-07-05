@@ -16,9 +16,9 @@ build order.
 | **M2 — Data layer + damage-calc utility** | ✅ done |
 | **M3 — Fixed-shape env contract** | ✅ done |
 | **M4 — Imitation baseline** | ✅ done |
-| M5 — PPO self-play loop | next |
+| **M5 — PPO self-play loop** | ✅ core loop validated |
 | M6 — Opponent pool | pending |
-| M7 — Evaluation gate | pending |
+| M7 — Evaluation gate | built, needs validation run |
 | M8 — Retrain trigger | pending |
 | M9 — Analytics + "analyze this turn" | pending |
 | M10 — Discord digest | pending |
@@ -57,6 +57,22 @@ human replays once that corpus is reachable.
 .venv/bin/python -m clefabot.imitation.train_bc  --dataset data/bc_dataset.npz --out checkpoints/bc_baseline.pt
 .venv/bin/python -m clefabot.imitation.evaluate  --checkpoint checkpoints/bc_baseline.pt --games 40
 ```
+
+### RL loop (M5)
+
+```bash
+# warm-starts from the BC checkpoint, logs every game + per-decision win-prob
+# to SQLite, checkpoints on schedule
+.venv/bin/python -m clefabot.rl.selfplay --games 200 --games-per-iter 20
+```
+
+PPO-clip is implemented directly on the shared `PolicyValueNet`
+(`clefabot/rl/ppo.py`) rather than via stable-baselines3 — documented
+deviation: SB3 can't express this setup (PettingZoo battle env, MultiDiscrete
+action masking, warm start from an externally trained net) without heavy
+custom-policy surgery. Rollouts are collected through poke-env's proven
+`battle_against` path; opponents mix live self-play, a frozen recent
+checkpoint, and the scripted MegaTeacher anchor.
 
 ### Known data-access limitation
 

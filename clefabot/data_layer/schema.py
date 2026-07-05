@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 DDL = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -55,11 +55,13 @@ CREATE TABLE IF NOT EXISTS games (
     format             TEXT
 );
 
--- Per-turn detail (spec §11). win_probability / move_probs populate once the
--- PPO value+policy heads exist (M5); for M1 the structural fields fill in.
+-- Per-decision detail (spec §11 "turns"). A doubles battle turn can contain
+-- several decisions (the main order plus force-switch replacements share a
+-- turn number), so the key includes a decision index within the game.
 CREATE TABLE IF NOT EXISTS turns (
     game_id         TEXT NOT NULL REFERENCES games(game_id),
     turn_number     INTEGER NOT NULL,
+    decision_idx    INTEGER NOT NULL DEFAULT 0,  -- ordinal within the game
     win_probability REAL,                 -- from PPO value head (M5+)
     move_probs_json TEXT,                 -- policy head distribution (M5+)
     active_self     TEXT,
@@ -67,7 +69,7 @@ CREATE TABLE IF NOT EXISTS turns (
     action_taken    TEXT,
     damage_dealt    REAL,
     damage_received REAL,
-    PRIMARY KEY (game_id, turn_number)
+    PRIMARY KEY (game_id, decision_idx)
 );
 
 -- Aggregated per-Pokemon stats, per team version (spec §11).
@@ -120,9 +122,24 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     return conn
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Bring an existing dev database up to the current schema version."""
+    row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+    version = int(row[0]) if row else SCHEMA_VERSION
+    if version < 2:
+        # v2 rekeys `turns` on (game_id, decision_idx); v1 dev data predates
+        # any analytics, so the table is rebuilt rather than converted.
+        conn.execute("DROP TABLE IF EXISTS turns")
+
+
 def init_db(db_path: str | Path) -> sqlite3.Connection:
-    """Create the schema if absent and return an open connection."""
+    """Create the schema if absent, migrating older dev schemas, and connect."""
     conn = connect(db_path)
+    has_meta = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='meta'"
+    ).fetchone()
+    if has_meta:
+        _migrate(conn)
     conn.executescript(DDL)
     conn.execute(
         "INSERT INTO meta(key, value) VALUES('schema_version', ?) "

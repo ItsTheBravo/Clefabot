@@ -71,18 +71,19 @@ class GameLogger:
         if turns:
             self.conn.executemany(
                 "INSERT INTO turns"
-                "(game_id, turn_number, win_probability, move_probs_json,"
-                " active_self, active_opponent, action_taken, damage_dealt,"
-                " damage_received) VALUES(?,?,?,?,?,?,?,?,?)",
+                "(game_id, turn_number, decision_idx, win_probability,"
+                " move_probs_json, active_self, active_opponent, action_taken,"
+                " damage_dealt, damage_received) VALUES(?,?,?,?,?,?,?,?,?,?)",
                 [
                     (
-                        game_id, t.get("turn_number"), t.get("win_probability"),
+                        game_id, t.get("turn_number"), i,
+                        t.get("win_probability"),
                         json.dumps(t["move_probs"]) if t.get("move_probs") else None,
                         t.get("active_self"), t.get("active_opponent"),
                         t.get("action_taken"), t.get("damage_dealt"),
                         t.get("damage_received"),
                     )
-                    for t in turns
+                    for i, t in enumerate(turns)
                 ],
             )
         self.conn.commit()

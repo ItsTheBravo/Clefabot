@@ -79,7 +79,7 @@ train faster — never required for Phase 1.
 |---|---|
 | Battle server | local `pokemon-showdown start --no-security` (Node) |
 | Protocol client / RL env | `poke-env` (Gymnasium-compatible) |
-| RL algorithm | PPO via `stable-baselines3` |
+| RL algorithm | PPO-clip implemented directly on the shared net (~150 lines; documented deviation from the spec's `stable-baselines3` — SB3 cannot express the two-agent battle env + MultiDiscrete masking + external warm start without extensive custom-policy surgery) |
 | NN framework | `torch` (CPU; MPS opportunistic, never required) |
 | Imitation baseline | behavior cloning, **same net architecture as the PPO policy** |
 | Damage calc | ruleset-compatible calc lib (verify M-B coverage) — shared utility |
