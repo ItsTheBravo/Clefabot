@@ -82,33 +82,38 @@ scraped opponent teams (M6) can't be fetched here yet. The pipeline is built and
 tested against local data; widening the policy or dropping in a data export
 unblocks the external corpus without code changes.
 
-## Setup
+## Run it locally
 
-Requires Node.js and Python 3.10+.
-
-```bash
-# 1. Python deps
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-
-# 2. Local Showdown server (fetched from GitHub — the npm package is too stale
-#    to include Champions/Reg M; see PLAN.md §0)
-scripts/setup_server.sh
-```
-
-## Run M1
+Requirements: **Python 3.10+**, **Node.js 18+**, macOS or Linux (Windows: WSL).
 
 ```bash
-# terminal 1: start the local server
-scripts/start_server.sh
-
-# terminal 2: play and log one game with the current team
-.venv/bin/python -m clefabot.cli.play \
-    --team config/current_team.txt --db data/clefabot.sqlite --games 1
+git clone https://github.com/ItsTheBravo/Clefabot.git
+cd Clefabot
+git checkout claude/review-before-starting-rwu4hj   # until merged to main
+scripts/bootstrap.sh          # venv + deps + Showdown server + tests (~5 min)
 ```
 
-The current team lives in [`config/current_team.txt`](config/current_team.txt)
-as a standard Showdown export (edit it to retrain later — that path lands in M8).
+Then, day to day:
+
+```bash
+scripts/ensure_server.sh                       # start battle server (idempotent)
+.venv/bin/python -m clefabot.cli.play          # smoke test: one logged game
+```
+
+Rebuild the training state (checkpoints/datasets are regenerable and not in
+git; ~30–40 min CPU total):
+
+```bash
+.venv/bin/python -m clefabot.imitation.collect  --games 150   # teacher data
+.venv/bin/python -m clefabot.imitation.train_bc               # BC baseline
+.venv/bin/python -m clefabot.imitation.evaluate --games 40    # sanity: beats random
+.venv/bin/python -m clefabot.rl.selfplay --games 200          # PPO self-play
+```
+
+Everything writes to `data/clefabot.sqlite` (WAL) and `checkpoints/` — both
+live on your disk, so nothing is lost between sessions. The current team lives
+in [`config/current_team.txt`](config/current_team.txt) as a standard Showdown
+export (edit it to retrain later — that path lands in M8).
 
 ## Tests
 
