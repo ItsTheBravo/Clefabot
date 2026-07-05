@@ -16,9 +16,9 @@ build order.
 | **M2 — Data layer + damage-calc utility** | ✅ done |
 | **M3 — Fixed-shape env contract** | ✅ done |
 | **M4 — Imitation baseline** | ✅ done |
-| **M5 — PPO self-play loop** | ✅ core loop validated |
+| **M5 — PPO self-play loop** | ✅ core loop validated (long-run soak pending) |
 | M6 — Opponent pool | pending |
-| M7 — Evaluation gate | built, needs validation run |
+| **M7 — Evaluation gate** | ✅ done |
 | M8 — Retrain trigger | pending |
 | M9 — Analytics + "analyze this turn" | pending |
 | M10 — Discord digest | pending |
