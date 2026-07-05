@@ -17,7 +17,7 @@ build order.
 | **M3 — Fixed-shape env contract** | ✅ done |
 | **M4 — Imitation baseline** | ✅ done |
 | **M5 — PPO self-play loop** | ✅ core loop validated (long-run soak pending) |
-| M6 — Opponent pool | pending |
+| M6 — Opponent pool | scraper ready — run locally (network) |
 | **M7 — Evaluation gate** | ✅ done |
 | M8 — Retrain trigger | pending |
 | M9 — Analytics + "analyze this turn" | pending |
@@ -73,6 +73,19 @@ action masking, warm start from an externally trained net) without heavy
 custom-policy surgery. Rollouts are collected through poke-env's proven
 `battle_against` path; opponents mix live self-play, a frozen recent
 checkpoint, and the scripted MegaTeacher anchor.
+
+### Opponent pool + replay corpus (M6 — run locally)
+
+```bash
+# network required (blocked in the cloud container; fine on a normal machine):
+# walks the public replay search, extracts BOTH players' teams from Open Team
+# Sheets, dedupes (exact + Jaccard near-duplicates), tags archetypes, and saves
+# raw replay logs for the imitation corpus
+.venv/bin/python -m clefabot.opponents.scrape --pages 10
+```
+
+Teams land in `opponents_pool/` (commit these — they're small and hard-won);
+raw logs land in `data/replays/` (gitignored, regenerable).
 
 ### Known data-access limitation
 
